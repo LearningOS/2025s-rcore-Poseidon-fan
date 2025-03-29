@@ -17,6 +17,7 @@ mod task;
 use crate::config::MAX_APP_NUM;
 use crate::loader::{get_num_app, init_app_cx};
 use crate::sync::UPSafeCell;
+use alloc::collections::btree_map::BTreeMap;
 use lazy_static::*;
 use switch::__switch;
 pub use task::{TaskControlBlock, TaskStatus};
@@ -45,6 +46,8 @@ pub struct TaskManagerInner {
     tasks: [TaskControlBlock; MAX_APP_NUM],
     /// id of current `Running` task
     current_task: usize,
+    /// record  the time of the syscall
+    syscall_record: [BTreeMap<usize, isize>; MAX_APP_NUM]
 }
 
 lazy_static! {
@@ -65,6 +68,10 @@ lazy_static! {
                 UPSafeCell::new(TaskManagerInner {
                     tasks,
                     current_task: 0,
+                    syscall_record: {
+                        const INIT: BTreeMap<usize, isize> = BTreeMap::new();
+                        [INIT; MAX_APP_NUM]
+                    }
                 })
             },
         }
@@ -134,6 +141,20 @@ impl TaskManager {
         } else {
             panic!("All applications completed!");
         }
+    }
+
+    /// get the times of the syscall with id
+    pub fn get_syscall_times(&self, id: usize) -> isize {
+        let inner = self.inner.exclusive_access();
+        let current_task_id = inner.current_task;
+        inner.syscall_record[current_task_id].get(&id).map_or(0, |&x| x)
+    }
+
+    /// add the times of the syscall with id
+    pub fn add_syscall_times(&self, id: usize) {
+        let mut inner = self.inner.exclusive_access();
+        let current_task_id = inner.current_task;
+        *inner.syscall_record[current_task_id].entry(id).or_insert(0) += 1;
     }
 }
 
