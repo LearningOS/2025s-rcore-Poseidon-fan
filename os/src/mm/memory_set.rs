@@ -262,6 +262,33 @@ impl MemorySet {
             false
         }
     }
+
+    /// check if the virtual address is in the memory set
+    pub fn conatins_vaddr(&self, vaddr: VirtAddr) -> bool {
+        self.areas
+            .iter()
+            .any(|area| area.vpn_range.contains(vaddr.floor()))
+    }
+
+    /// check if the virtual address is in the memory set
+    pub fn overlap(&self, start: VirtAddr, end: VirtAddr) -> bool {
+        let (start_va, end_va) = (start.floor(), end.ceil());
+        self.areas.iter().any(|area| {
+            let (map_start, map_end) = (area.vpn_range.get_start(), area.vpn_range.get_end());
+            start_va < map_end && end_va > map_start
+        })
+    }
+
+    /// deallocate the area from start_va to end_va
+    pub fn deallocate(&mut self, start_va: VirtAddr, end_va: VirtAddr) {
+        let start_vpn = start_va.floor();
+        let end_vpn = end_va.ceil();
+        if let Some(pos) = self.areas.iter().position(|area| 
+            area.vpn_range.get_start() == start_vpn && area.vpn_range.get_end() == end_vpn
+        ) {
+            self.areas.remove(pos).unmap(&mut self.page_table);
+        }
+    }
 }
 /// map area structure, controls a contiguous piece of virtual memory
 pub struct MapArea {

@@ -15,8 +15,10 @@ mod switch;
 mod task;
 
 use crate::loader::{get_app_data, get_num_app};
+use crate::mm::{MapPermission, VirtAddr};
 use crate::sync::UPSafeCell;
 use crate::trap::TrapContext;
+use alloc::collections::btree_map::BTreeMap;
 use alloc::vec::Vec;
 use lazy_static::*;
 use switch::__switch;
@@ -46,6 +48,7 @@ struct TaskManagerInner {
     tasks: Vec<TaskControlBlock>,
     /// id of current `Running` task
     current_task: usize,
+    syscall_record: BTreeMap<(usize, usize), isize>
 }
 
 lazy_static! {
@@ -64,6 +67,10 @@ lazy_static! {
                 UPSafeCell::new(TaskManagerInner {
                     tasks,
                     current_task: 0,
+                    syscall_record: {
+                        const INIT: BTreeMap<(usize, usize), isize> = BTreeMap::new();
+                        INIT
+                    }
                 })
             },
         }
@@ -153,6 +160,77 @@ impl TaskManager {
             panic!("All applications completed!");
         }
     }
+
+    fn add_syscall_time(&self, syscall_id: usize) {
+        let mut inner = self.inner.exclusive_access();
+        let current_task_id = inner.current_task;
+        let key = (current_task_id, syscall_id);
+        *inner.syscall_record.entry(key).or_insert(0) += 1;
+    }
+
+    fn get_syscall_time(&self, syscall_id: usize) -> isize {
+        let inner = self.inner.exclusive_access();
+        let current_task_id = inner.current_task;
+        let key = (current_task_id, syscall_id);
+        inner.syscall_record.get(&key).map_or(0, |&x| x)
+    }
+
+    /// Check if the virtual address is mapped by the current task
+    pub fn conatins_vaddr(&self, vaddr: usize) -> bool {
+        let inner = self.inner.exclusive_access();
+        let current_task_id = inner.current_task;
+        let current_task = &inner.tasks[current_task_id];
+        current_task.memory_set.conatins_vaddr(vaddr.into())
+    }
+
+    /// implement mmap syscall
+    pub fn mmap(&self, start: usize, len: usize, port: usize) -> isize {
+        let mut inner = self.inner.exclusive_access();
+        let current_task_id = inner.current_task;
+        let current_task = &mut inner.tasks[current_task_id];
+        let start_va = VirtAddr::from(start);
+        let end_va = VirtAddr::from(start+len);
+        let permission=MapPermission::from_bits_truncate((port << 1) as u8) | MapPermission::U;
+        if current_task.memory_set.overlap(start_va, end_va) {
+            return -1;
+        }
+        current_task.memory_set.insert_framed_area(start_va, end_va, permission);
+        0
+    }
+
+    /// implement munmap syscall
+    pub fn ummap(&self, start: usize, len: usize) -> isize {
+        let mut inner = self.inner.exclusive_access();
+        let current_task_id = inner.current_task;
+        let current_task = &mut inner.tasks[current_task_id];
+        current_task.memory_set.deallocate(start.into(), (start + len).into());
+        0
+    }
+}
+
+/// implement mmap syscall
+pub fn ummap(start: usize, len: usize) -> isize {
+    TASK_MANAGER.ummap(start, len)
+}
+
+/// implement munmap syscall
+pub fn mmap(start: usize, len: usize, port: usize) -> isize {
+    TASK_MANAGER.mmap(start, len, port)
+}
+
+/// check if the virtual address is mapped by the current task
+pub fn contains_vaddr(vaddr: usize) -> bool {
+    TASK_MANAGER.conatins_vaddr(vaddr)
+}
+
+/// add syscall time
+pub fn add_syscall_time(syscall_id: usize) {
+    TASK_MANAGER.add_syscall_time(syscall_id);
+}
+
+/// get syscall time
+pub fn get_syscall_time(syscall_id: usize) -> isize {
+    TASK_MANAGER.get_syscall_time(syscall_id)
 }
 
 /// Run the first task in task list.
