@@ -2,12 +2,10 @@
 use alloc::sync::Arc;
 
 use crate::{
-    loader::get_app_data_by_name,
-    mm::{translated_refmut, translated_str},
-    task::{
+    config::PAGE_SIZE, loader::get_app_data_by_name, mm::{translated_byte_buffer, translated_refmut, translated_str, VirtAddr}, task::{
         add_task, current_task, current_user_token, exit_current_and_run_next,
         suspend_current_and_run_next,
-    },
+    }, timer::{get_time_us, MICRO_PER_SEC}
 };
 
 #[repr(C)]
@@ -105,29 +103,64 @@ pub fn sys_waitpid(pid: isize, exit_code_ptr: *mut i32) -> isize {
 /// YOUR JOB: get time with second and microsecond
 /// HINT: You might reimplement it with virtual memory management.
 /// HINT: What if [`TimeVal`] is splitted by two pages ?
-pub fn sys_get_time(_ts: *mut TimeVal, _tz: usize) -> isize {
+pub fn sys_get_time(ts: *mut TimeVal, _tz: usize) -> isize {
     trace!(
         "kernel:pid[{}] sys_get_time NOT IMPLEMENTED",
         current_task().unwrap().pid.0
     );
-    -1
+    let us = get_time_us();
+    let cur_token = current_user_token();
+    let dsts = translated_byte_buffer(cur_token, ts as *const u8, core::mem::size_of::<TimeVal>());
+    let src = &TimeVal {
+        sec: us / MICRO_PER_SEC,
+        usec: us % MICRO_PER_SEC,
+    } as *const TimeVal;
+    for (id, dst) in dsts.into_iter().enumerate() {
+        let len = dst.len();
+        unsafe {
+            dst.copy_from_slice(core::slice::from_raw_parts(
+                src.wrapping_byte_add(id * len) as *const u8, len)
+            );
+        }
+    }
+    0
 }
 
 /// YOUR JOB: Implement mmap.
-pub fn sys_mmap(_start: usize, _len: usize, _port: usize) -> isize {
+pub fn sys_mmap(start: usize, len: usize, port: usize) -> isize {
     trace!(
         "kernel:pid[{}] sys_mmap NOT IMPLEMENTED",
         current_task().unwrap().pid.0
     );
+    if port & !0b111 != 0 {
+        return -1;
+    }
+    if port & 0b111 == 0{
+        return -1;
+    }
+    if len == 0 || start % PAGE_SIZE != 0 {
+        return -1;
+    }
     -1
 }
 
 /// YOUR JOB: Implement munmap.
-pub fn sys_munmap(_start: usize, _len: usize) -> isize {
+pub fn sys_munmap(start: usize, len: usize) -> isize {
     trace!(
         "kernel:pid[{}] sys_munmap NOT IMPLEMENTED",
         current_task().unwrap().pid.0
     );
+    if start % PAGE_SIZE != 0 {
+        return -1;
+    }
+    let start_va: VirtAddr = start.into();
+    let end_va: VirtAddr = (start+len).into();
+    if  !start_va.aligned() || !end_va.aligned(){
+        return -1;
+    }
+    if len == 0 || start % PAGE_SIZE != 0 {
+        return -1;
+    }
     -1
 }
 

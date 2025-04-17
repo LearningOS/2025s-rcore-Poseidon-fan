@@ -7,6 +7,7 @@
 use super::__switch;
 use super::{fetch_task, TaskStatus};
 use super::{TaskContext, TaskControlBlock};
+use crate::mm::MapPermission;
 use crate::sync::UPSafeCell;
 use crate::trap::TrapContext;
 use alloc::sync::Arc;
@@ -108,4 +109,14 @@ pub fn schedule(switched_task_cx_ptr: *mut TaskContext) {
     unsafe {
         __switch(switched_task_cx_ptr, idle_task_cx_ptr);
     }
+}
+
+/// implement mmap syscall
+pub fn mmap(start: usize, len: usize, port: usize) -> isize {
+    let cur_tcb = current_task().unwrap();
+    let mut cur_inner = cur_tcb.inner_exclusive_access();
+    let permission=MapPermission::from_bits_truncate((port << 1) as u8) | MapPermission::U;
+
+    cur_inner.memory_set.insert_framed_area(start.into(), (start + len).into(), permission);
+    0
 }
