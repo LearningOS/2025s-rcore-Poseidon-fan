@@ -116,7 +116,17 @@ pub fn mmap(start: usize, len: usize, port: usize) -> isize {
     let cur_tcb = current_task().unwrap();
     let mut cur_inner = cur_tcb.inner_exclusive_access();
     let permission=MapPermission::from_bits_truncate((port << 1) as u8) | MapPermission::U;
-
+    if cur_inner.memory_set.overlap(start.into(), (start + len).into()) {
+        return -1;
+    }
     cur_inner.memory_set.insert_framed_area(start.into(), (start + len).into(), permission);
+    0
+}
+
+/// implement munmap syscall
+pub fn unmap(start: usize, len: usize) -> isize {
+    let cur_tcb = current_task().unwrap();
+    let mut cur_inner = cur_tcb.inner_exclusive_access();
+    cur_inner.memory_set.remove_framed_area(start.into(), (start + len).into());
     0
 }

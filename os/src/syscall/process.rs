@@ -3,8 +3,7 @@ use alloc::sync::Arc;
 
 use crate::{
     config::PAGE_SIZE, loader::get_app_data_by_name, mm::{translated_byte_buffer, translated_refmut, translated_str, VirtAddr}, task::{
-        add_task, current_task, current_user_token, exit_current_and_run_next,
-        suspend_current_and_run_next,
+        add_task, current_task, current_user_token, exit_current_and_run_next, mmap, suspend_current_and_run_next
     }, timer::{get_time_us, MICRO_PER_SEC}
 };
 
@@ -141,7 +140,7 @@ pub fn sys_mmap(start: usize, len: usize, port: usize) -> isize {
     if len == 0 || start % PAGE_SIZE != 0 {
         return -1;
     }
-    -1
+    mmap(start, len, port)
 }
 
 /// YOUR JOB: Implement munmap.

@@ -300,6 +300,15 @@ impl MemorySet {
             false
         }
     }
+
+    /// check if the virtual address is in the memory set
+    pub fn overlap(&self, start: VirtAddr, end: VirtAddr) -> bool {
+        let (start_va, end_va) = (start.floor(), end.ceil());
+        self.areas.iter().any(|area| {
+            let (map_start, map_end) = (area.vpn_range.get_start(), area.vpn_range.get_end());
+            start_va < map_end && end_va > map_start
+        })
+    }
 }
 /// map area structure, controls a contiguous piece of virtual memory
 pub struct MapArea {
