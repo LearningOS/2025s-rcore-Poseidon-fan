@@ -309,6 +309,17 @@ impl MemorySet {
             start_va < map_end && end_va > map_start
         })
     }
+
+    /// check if the virtual address is in the memory set
+    pub fn remove_framed_area(&mut self, start_va: VirtAddr, end_va: VirtAddr) {
+        let start_vpn = start_va.floor();
+        let end_vpn = end_va.ceil();
+        if let Some(pos) = self.areas.iter().position(|area| 
+            area.vpn_range.get_start() == start_vpn && area.vpn_range.get_end() == end_vpn
+        ) {
+            self.areas.remove(pos).unmap(&mut self.page_table);
+        }
+    }
 }
 /// map area structure, controls a contiguous piece of virtual memory
 pub struct MapArea {
